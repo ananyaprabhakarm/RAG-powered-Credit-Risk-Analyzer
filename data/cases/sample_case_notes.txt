@@ -1,0 +1,4 @@
+Case Study: High Utilization with Late Payments
+Borrowers with utilization > 70% and >= 2 late payments showed elevated default rates (~35-45%).
+Mitigation strategies: reduce exposure, collateralization, and repayment capacity verification.
+
