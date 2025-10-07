@@ -4,7 +4,7 @@ A minimal, end-to-end scaffold that combines a simple risk model (structured dat
 
 ### Features
 - Risk score from borrower profile (rule-based starter; pluggable ML later)
-- RAG over local knowledge base using FAISS + sentence-transformers
+- RAG over knowledge base using Pinecone + sentence-transformers
 - Natural language explanation citing retrieved snippets
 - Streamlit UI for quick demo
 
@@ -13,8 +13,8 @@ A minimal, end-to-end scaffold that combines a simple risk model (structured dat
 src/
   app/streamlit_app.py        # Streamlit UI
   risk_model/model.py         # Simple probability model + categorization
-  rag/ingest.py               # Build FAISS index from txt/PDF (txt starter)
-  rag/retriever.py            # Retriever wrapper
+  rag/ingest.py               # Upsert embeddings to Pinecone from .txt files
+  rag/retriever.py            # Query Pinecone and return snippets
   explain/generator.py        # Explanation generator (templated + optional OpenAI)
   utils/text.py               # Small helpers
   config.py                   # Paths, model names, constants
@@ -23,9 +23,7 @@ data/
   policies/*.txt
   cases/*.txt
 artifacts/
-  faiss_index.bin
-  embeddings.npy
-  docstore.json
+  docstore.json               # Local mirror of documents for citations
 ```
 
 ### Quickstart
@@ -44,7 +42,7 @@ pip install -r requirements.txt
 export OPENAI_API_KEY=your_key
 ```
 
-4) Ingest sample documents (build FAISS index)
+4) Ingest sample documents (upsert to Pinecone)
 ```bash
 python -m src.rag.ingest
 ```
@@ -58,6 +56,7 @@ streamlit run src/app/streamlit_app.py
 - By default, explanations use a deterministic template combining model features and retrieved snippets. If `OPENAI_API_KEY` is present, the generator will use the LLM to craft more fluent explanations.
 - Replace the simple rule-based model with your trained classifier by swapping implementations in `src/risk_model/model.py`.
 - Add your PDFs or policies by converting to text (`.txt`) and placing them under `data/` to start. PDF parsing can be added later.
+ - Configure Pinecone via environment variables: `PINECONE_API_KEY`, `PINECONE_ENV` (e.g., `us-east-1`), and `PINECONE_INDEX_NAME`.
 
 ### License
 MIT

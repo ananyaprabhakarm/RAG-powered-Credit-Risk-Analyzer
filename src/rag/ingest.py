@@ -5,18 +5,19 @@ from pathlib import Path
 from typing import List, Dict
 
 import numpy as np
-import faiss
 from sentence_transformers import SentenceTransformer
+from pinecone import Pinecone, ServerlessSpec
 
 from src.config import (
     REGULATIONS_DIR,
     POLICIES_DIR,
     CASES_DIR,
     ARTIFACTS_DIR,
-    INDEX_PATH,
-    EMBEDDINGS_PATH,
     DOCSTORE_PATH,
     EMBEDDING_MODEL_NAME,
+    PINECONE_API_KEY,
+    PINECONE_ENV,
+    PINECONE_INDEX_NAME,
 )
 
 
@@ -47,6 +48,9 @@ def _normalize(vecs: np.ndarray) -> np.ndarray:
 def build_index() -> None:
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
+    if not PINECONE_API_KEY:
+        raise RuntimeError("PINECONE_API_KEY not set")
+
     docs = _read_text_files([REGULATIONS_DIR, POLICIES_DIR, CASES_DIR])
     if not docs:
         raise RuntimeError("No .txt documents found under data/. Add sample files and retry.")
@@ -56,15 +60,35 @@ def build_index() -> None:
     embeddings = model.encode(texts, batch_size=32, convert_to_numpy=True, normalize_embeddings=False)
     embeddings = _normalize(embeddings.astype(np.float32))
 
+    # Init Pinecone and ensure index exists
+    pc = Pinecone(api_key=PINECONE_API_KEY)
+    spec = ServerlessSpec(cloud="aws", region=PINECONE_ENV)
     dim = embeddings.shape[1]
-    index = faiss.IndexFlatIP(dim)
-    index.add(embeddings)
+    existing = {idx["name"] for idx in pc.list_indexes()}
+    if PINECONE_INDEX_NAME not in existing:
+        pc.create_index(name=PINECONE_INDEX_NAME, dimension=dim, metric="cosine", spec=spec)
+    index = pc.Index(PINECONE_INDEX_NAME)
 
-    faiss.write_index(index, str(INDEX_PATH))
-    np.save(EMBEDDINGS_PATH, embeddings)
+    # Upsert vectors with metadata
+    vectors = []
+    for i, (doc, emb) in enumerate(zip(docs, embeddings)):
+        vectors.append({
+            "id": doc["id"],
+            "values": emb.tolist(),
+            "metadata": {
+                "source": doc["source"],
+                "text": doc["text"][:4000],
+            },
+        })
+    # Batch to avoid payload limits
+    batch_size = 100
+    for start in range(0, len(vectors), batch_size):
+        index.upsert(vectors=vectors[start:start+batch_size])
+
+    # Persist local docstore for full text/citations
     DOCSTORE_PATH.write_text(json.dumps(docs, ensure_ascii=False, indent=2))
 
-    print(f"Indexed {len(docs)} documents → {INDEX_PATH}")
+    print(f"Indexed {len(docs)} documents → Pinecone index '{PINECONE_INDEX_NAME}'")
 
 
 if __name__ == "__main__":
